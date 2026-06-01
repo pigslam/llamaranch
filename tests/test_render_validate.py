@@ -11,7 +11,13 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from llamaranch.config import load_config
 from llamaranch.renderer import render_server
-from llamaranch.systemd import unit_name
+from llamaranch.systemd import (
+    journalctl_args,
+    render_unit,
+    systemctl_args,
+    unit_name,
+    write_unit,
+)
 from llamaranch.validate import validate_config
 
 
@@ -79,6 +85,48 @@ servers:
     def test_unit_names_are_deterministic_and_sanitized(self) -> None:
         self.assertEqual(unit_name("fast-chat"), "llamaranch-fast-chat.service")
         self.assertEqual(unit_name("fast chat"), "llamaranch-fast-chat.service")
+
+    def test_render_unit_uses_resolved_command_and_environment(self) -> None:
+        unit = render_unit(
+            "fast-chat",
+            ("/bin/llama-server", "--model", "/models/qwen.gguf"),
+            working_dir=Path("/tmp"),
+            env={"GGML_VK_VISIBLE_DEVICES": "0"},
+        )
+
+        self.assertIn("Description=LlamaRanch server fast-chat", unit)
+        self.assertIn("WorkingDirectory=/tmp", unit)
+        self.assertIn("Environment=GGML_VK_VISIBLE_DEVICES=0", unit)
+        self.assertIn("ExecStart=/bin/llama-server --model /models/qwen.gguf", unit)
+        self.assertIn("Restart=on-failure", unit)
+        self.assertIn("WantedBy=default.target", unit)
+
+    def test_write_unit_writes_deterministic_user_unit_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            unit_path = write_unit(
+                "fast-chat",
+                ("/bin/llama-server", "--port", "8081"),
+                systemd_user_dir=Path(tmp),
+            )
+
+            self.assertEqual(unit_path, Path(tmp) / "llamaranch-fast-chat.service")
+            self.assertIn(
+                "ExecStart=/bin/llama-server --port 8081",
+                unit_path.read_text(encoding="utf-8"),
+            )
+
+    def test_systemd_command_builders_are_explicit(self) -> None:
+        service = "llamaranch-fast-chat.service"
+
+        self.assertEqual(systemctl_args("daemon-reload"), ("systemctl", "--user", "daemon-reload"))
+        self.assertEqual(
+            systemctl_args("start", service),
+            ("systemctl", "--user", "start", service),
+        )
+        self.assertEqual(
+            journalctl_args(service, lines=50, follow=True),
+            ("journalctl", "--user", "-u", service, "-n", "50", "-f"),
+        )
 
     def assert_flag_value(self, command: list[str], flag: str, value: str) -> None:
         index = command.index(flag)

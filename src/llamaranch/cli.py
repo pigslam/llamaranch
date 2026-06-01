@@ -9,7 +9,14 @@ from rich.table import Table
 from .config import DEFAULT_CONFIG_DIR, load_config
 from .renderer import render_server
 from .schema import ConfigError
-from .systemd import service_state, unit_name
+from .systemd import (
+    SystemdError,
+    run_journalctl,
+    run_systemctl,
+    service_state,
+    unit_name,
+    write_unit,
+)
 from .validate import validate_config
 
 app = typer.Typer(help="LlamaRanch: llama.cpp deployment manager")
@@ -77,7 +84,116 @@ def render(
 
         console.print()
         console.print("[bold]Unit[/bold]")
-        console.print(render_unit(rendered.name, rendered.command))
+        console.print(render_unit(rendered.name, rendered.command, env=rendered.hardware.env))
+
+
+@app.command()
+def start(
+    server: str = typer.Argument(..., help="Configured server name."),
+    config_dir: Path = typer.Option(
+        DEFAULT_CONFIG_DIR,
+        "--config-dir",
+        "-c",
+        help="Configuration directory.",
+    ),
+) -> None:
+    """Write the user service unit and start a server."""
+    rendered = render_configured_server(config_dir, server)
+    unit_file = write_unit(rendered.name, rendered.command, env=rendered.hardware.env)
+    run_systemd_or_exit("daemon-reload")
+    run_systemd_or_exit("start", rendered.unit_name)
+    console.print(f"[green]Started[/green] {rendered.unit_name}")
+    console.print(f"[dim]Unit:[/dim] {unit_file}")
+
+
+@app.command()
+def stop(
+    server: str = typer.Argument(..., help="Configured server name."),
+    config_dir: Path = typer.Option(
+        DEFAULT_CONFIG_DIR,
+        "--config-dir",
+        "-c",
+        help="Configuration directory.",
+    ),
+) -> None:
+    """Stop a managed user service."""
+    rendered = render_configured_server(config_dir, server)
+    run_systemd_or_exit("stop", rendered.unit_name)
+    console.print(f"[green]Stopped[/green] {rendered.unit_name}")
+
+
+@app.command()
+def restart(
+    server: str = typer.Argument(..., help="Configured server name."),
+    config_dir: Path = typer.Option(
+        DEFAULT_CONFIG_DIR,
+        "--config-dir",
+        "-c",
+        help="Configuration directory.",
+    ),
+) -> None:
+    """Write the latest user service unit and restart a server."""
+    rendered = render_configured_server(config_dir, server)
+    unit_file = write_unit(rendered.name, rendered.command, env=rendered.hardware.env)
+    run_systemd_or_exit("daemon-reload")
+    run_systemd_or_exit("restart", rendered.unit_name)
+    console.print(f"[green]Restarted[/green] {rendered.unit_name}")
+    console.print(f"[dim]Unit:[/dim] {unit_file}")
+
+
+@app.command()
+def enable(
+    server: str = typer.Argument(..., help="Configured server name."),
+    config_dir: Path = typer.Option(
+        DEFAULT_CONFIG_DIR,
+        "--config-dir",
+        "-c",
+        help="Configuration directory.",
+    ),
+) -> None:
+    """Write the user service unit and enable it for login startup."""
+    rendered = render_configured_server(config_dir, server)
+    unit_file = write_unit(rendered.name, rendered.command, env=rendered.hardware.env)
+    run_systemd_or_exit("daemon-reload")
+    run_systemd_or_exit("enable", rendered.unit_name)
+    console.print(f"[green]Enabled[/green] {rendered.unit_name}")
+    console.print(f"[dim]Unit:[/dim] {unit_file}")
+
+
+@app.command()
+def disable(
+    server: str = typer.Argument(..., help="Configured server name."),
+    config_dir: Path = typer.Option(
+        DEFAULT_CONFIG_DIR,
+        "--config-dir",
+        "-c",
+        help="Configuration directory.",
+    ),
+) -> None:
+    """Disable a managed user service from login startup."""
+    rendered = render_configured_server(config_dir, server)
+    run_systemd_or_exit("disable", rendered.unit_name)
+    console.print(f"[green]Disabled[/green] {rendered.unit_name}")
+
+
+@app.command()
+def logs(
+    server: str = typer.Argument(..., help="Configured server name."),
+    config_dir: Path = typer.Option(
+        DEFAULT_CONFIG_DIR,
+        "--config-dir",
+        "-c",
+        help="Configuration directory.",
+    ),
+    lines: int = typer.Option(100, "--lines", "-n", help="Number of lines to show."),
+    follow: bool = typer.Option(True, "--follow/--no-follow", help="Follow log output."),
+) -> None:
+    """Show journal logs for a managed user service."""
+    rendered = render_configured_server(config_dir, server)
+    try:
+        run_journalctl(rendered.unit_name, lines=lines, follow=follow)
+    except (SystemdError, ValueError) as exc:
+        raise_error(str(exc))
 
 
 @app.command("list")
@@ -168,6 +284,21 @@ def load_ready_config_or_exit(config_dir: Path):
         missing = ", ".join(config.missing_files)
         raise_error(f"missing config files in {config.config_dir}: {missing}")
     return config
+
+
+def render_configured_server(config_dir: Path, server: str):
+    config = load_ready_config_or_exit(config_dir)
+    try:
+        return render_server(config, server)
+    except ValueError as exc:
+        raise_error(str(exc))
+
+
+def run_systemd_or_exit(action: str, service_name: str | None = None) -> None:
+    try:
+        run_systemctl(action, service_name)
+    except (SystemdError, ValueError) as exc:
+        raise_error(str(exc))
 
 
 def raise_error(message: str) -> None:
