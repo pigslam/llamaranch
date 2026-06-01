@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from .config import CONFIG_FILES, RanchConfig
+from .config import RanchConfig
 from .renderer import RenderError, render_server
 from .systemd import unit_name
 
@@ -34,9 +34,8 @@ class ValidationResult:
 def validate_config(config: RanchConfig) -> ValidationResult:
     issues: list[ValidationIssue] = []
 
-    for filename in CONFIG_FILES:
-        if filename in config.missing_files:
-            issues.append(error(f"missing config file: {config.config_dir / filename}"))
+    for filename in config.missing_files:
+        issues.append(error(f"missing config file: {config.config_dir / filename}"))
 
     if not config.models:
         issues.append(error("no models are configured"))
@@ -129,4 +128,3 @@ def check_rendering(config: RanchConfig, issues: list[ValidationIssue]) -> None:
 
 def error(message: str) -> ValidationIssue:
     return ValidationIssue("error", message)
-

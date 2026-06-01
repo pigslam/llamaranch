@@ -9,7 +9,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from llamaranch.config import load_config
+from llamaranch.config import load_config, load_config_file, load_profile_config
 from llamaranch.renderer import render_server
 from llamaranch.systemd import (
     journalctl_args,
@@ -44,11 +44,54 @@ class RenderValidateTests(unittest.TestCase):
             self.assert_flag_value(command, "--spec-draft-n-max", "2")
             self.assertIn("--cache-reuse", command)
 
+    def test_profile_config_resolves_by_name_and_uses_file_stem_server(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            configs_dir, profile_path, llama_server = write_profile_config(Path(tmp), "coder")
+
+            config = load_profile_config("coder", configs_dir)
+            rendered = render_server(config, "coder")
+            command = list(rendered.command)
+
+            self.assertEqual(config.source, profile_path)
+            self.assertEqual(config.profile_name, "coder")
+            self.assertEqual(command[0], str(llama_server))
+            self.assertEqual(rendered.unit_name, "llamaranch-coder.service")
+            self.assert_flag_value(command, "--model", str(config.models["qwen"].path))
+            self.assert_flag_value(command, "--host", "0.0.0.0")
+            self.assert_flag_value(command, "--port", "8081")
+            self.assertIn("--cache-reuse", command)
+
+    def test_profile_config_resolves_from_full_path(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, profile_path, _ = write_profile_config(Path(tmp), "coder")
+
+            config = load_profile_config(profile_path)
+
+            self.assertEqual(config.source, profile_path)
+            self.assertIn("coder", config.servers)
+
+    def test_profile_config_resolves_dotted_names(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            configs_dir, profile_path, _ = write_profile_config(Path(tmp), "coder.v2")
+
+            config = load_profile_config("coder.v2", configs_dir)
+
+            self.assertEqual(config.source, profile_path)
+            self.assertIn("coder.v2", config.servers)
+
     def test_validate_accepts_complete_config(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             config_dir, _ = write_valid_config(Path(tmp))
 
             result = validate_config(load_config(config_dir))
+
+            self.assertTrue(result.ok, [issue.message for issue in result.issues])
+
+    def test_validate_accepts_single_file_profile_config(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            _, profile_path, _ = write_profile_config(Path(tmp), "coder")
+
+            result = validate_config(load_config_file(profile_path))
 
             self.assertTrue(result.ok, [issue.message for issue in result.issues])
 
@@ -195,6 +238,55 @@ servers:
     )
 
     return config_dir, llama_server
+
+
+def write_profile_config(root: Path, profile_name: str) -> tuple[Path, Path, Path]:
+    configs_dir = root / "configs"
+    model_dir = root / "models"
+    bin_dir = root / "bin"
+    configs_dir.mkdir()
+    model_dir.mkdir()
+    bin_dir.mkdir()
+
+    llama_server = bin_dir / "llama-server"
+    llama_server.write_text("#!/bin/sh\n", encoding="utf-8")
+    os.chmod(llama_server, 0o755)
+
+    model_path = model_dir / "qwen.gguf"
+    model_path.write_text("", encoding="utf-8")
+
+    profile_path = configs_dir / f"{profile_name}.yaml"
+    profile_path.write_text(
+        f"""
+config:
+  llama_server: {llama_server}
+
+models:
+  qwen:
+    path: {model_path}
+    context: 32768
+    defaults:
+      temperature: 0.0
+
+hardware:
+  theridge-r9700:
+    backend: vulkan
+    gpu_layers: -1
+    main_gpu: 0
+
+server:
+  model: qwen
+  hardware: theridge-r9700
+  host: 0.0.0.0
+  port: 8081
+  enabled: true
+  extra_args:
+    - --cache-reuse
+""",
+        encoding="utf-8",
+    )
+
+    return configs_dir, profile_path, llama_server
 
 
 if __name__ == "__main__":

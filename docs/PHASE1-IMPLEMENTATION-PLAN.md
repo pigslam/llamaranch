@@ -37,13 +37,13 @@ Systemd mode:
 Required commands:
 
 ```bash
-llamaranch start <server>
-llamaranch stop <server>
-llamaranch restart <server>
+llamaranch start <config>
+llamaranch stop <config>
+llamaranch restart <config>
 llamaranch status
-llamaranch status <server>
-llamaranch logs <server>
-llamaranch render <server>
+llamaranch status <config>
+llamaranch logs <config>
+llamaranch render <config>
 llamaranch validate
 llamaranch roundup
 ```
@@ -51,24 +51,41 @@ llamaranch roundup
 Optional early commands:
 
 ```bash
-llamaranch enable <server>
-llamaranch disable <server>
+llamaranch enable <config>
+llamaranch disable <config>
+llamaranch list
+```
+
+Profile-management commands:
+
+```bash
+llamaranch new <name>
+llamaranch edit <name>
+llamaranch clone <source> <destination>
+llamaranch delete <name>
 llamaranch list
 ```
 
 ## Configuration Directory
 
-Use a simple Git-friendly config directory:
+Use a simple Git-friendly profile directory:
 
 ```text
 ~/.config/llamaranch/
-  config.yaml
-  models.yaml
-  hardware.yaml
-  servers.yaml
+  configs/
+    coder.yaml
+    fast-chat.yaml
+    long-context.yaml
 ```
 
 No database in Phase 1.
+
+Each profile is a single YAML file. The file can be addressed by full path or
+by basename from `~/.config/llamaranch/configs`, so `coder.yaml` can be started
+with `llamaranch start coder`.
+
+The profile is the source of truth. LlamaRanch does not maintain a database or
+hidden profile registry.
 
 ## Conceptual Objects
 
@@ -101,23 +118,24 @@ hardware:
 
 ### Server
 
-A server combines model, hardware, port, and launch settings.
+A server combines model, hardware, port, and launch settings. For a single-server
+profile, the singular `server` section is named after the YAML file.
 
 ```yaml
-servers:
-  fast-chat:
-    model: qwen36-27b-mtp-q4xl
-    hardware: theridge-r9700
-    host: 0.0.0.0
-    port: 8081
-    enabled: true
-    extra_args:
-      - --cache-reuse
+server:
+  model: qwen36-27b-mtp-q4xl
+  hardware: theridge-r9700
+  host: 0.0.0.0
+  port: 8081
+  enabled: true
+  extra_args:
+    - --cache-reuse
 ```
 
 ## Render Behavior
 
-`llamaranch render fast-chat` prints the fully resolved command without starting it.
+`llamaranch render fast-chat` prints the fully resolved command for
+`~/.config/llamaranch/configs/fast-chat.yaml` without starting it.
 
 It shows:
 
@@ -188,6 +206,29 @@ Later output modes:
 llamaranch roundup --available
 llamaranch roundup --full
 ```
+
+## Profile Workflow
+
+The primary workflow after the proof of concept is maintaining known-good
+profiles:
+
+```text
+known-good profile
+    ↓
+clone
+    ↓
+modify one setting
+    ↓
+test
+    ↓
+keep or delete
+```
+
+`llamaranch new <name>` creates a profile from the built-in template.
+`llamaranch edit <name>` opens the YAML using `$VISUAL`, `$EDITOR`, then `nano`.
+`llamaranch clone <source> <destination>` copies a profile without rewriting the
+YAML. `llamaranch delete <name>` confirms before deletion and refuses to delete
+a running profile unless forced.
 
 ## Implementation Order
 

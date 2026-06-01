@@ -33,11 +33,11 @@ Running llama.cpp manually often requires:
 LlamaRanch provides a consistent interface:
 
 ```bash
-llamaranch start fast-chat
-llamaranch stop fast-chat
-llamaranch restart fast-chat
+llamaranch start coder
+llamaranch stop coder
+llamaranch restart coder
 llamaranch status
-llamaranch logs fast-chat
+llamaranch logs coder
 ```
 
 while continuing to use standard llama.cpp servers underneath.
@@ -113,10 +113,82 @@ LlamaRanch must never hide the underlying llama.cpp command.
 Every deployment should be inspectable through:
 
 ```bash
-llamaranch render <server>
+llamaranch render <config>
 ```
 
 which displays the fully resolved llama-server command before execution.
+
+## Configuration
+
+Single-file profiles live in:
+
+```text
+~/.config/llamaranch/configs/
+```
+
+For example, `~/.config/llamaranch/configs/coder.yaml` can be launched with:
+
+```bash
+llamaranch start coder
+```
+
+You can also pass a direct file path:
+
+```bash
+llamaranch start /path/to/coder.yaml
+```
+
+A profile keeps the same conceptual sections that were previously split across
+separate files:
+
+```yaml
+config:
+  llama_server: ~/.local/bin/llama-server
+
+models:
+  qwen:
+    path: /models/qwen.gguf
+    context: 32768
+    defaults:
+      temperature: 0.0
+
+hardware:
+  theridge-r9700:
+    backend: vulkan
+    gpu_layers: -1
+    main_gpu: 0
+
+server:
+  model: qwen
+  hardware: theridge-r9700
+  host: 0.0.0.0
+  port: 8081
+  extra_args:
+    - --cache-reuse
+```
+
+The singular `server` section is named after the profile file, so `coder.yaml`
+creates the `llamaranch-coder.service` unit. A `servers` mapping is also
+supported for profiles that intentionally define more than one server; pass
+`--server <name>` when rendering or managing one of those entries.
+
+## Profile Management
+
+Profiles are intended to be cloned, edited, tested, kept, or deleted:
+
+```bash
+llamaranch new experimental
+llamaranch clone coder coder-temp
+llamaranch edit coder-temp
+llamaranch render coder-temp
+llamaranch delete coder-temp
+```
+
+`llamaranch list` shows the available profile library with profile name, current
+systemd state, port, and model.
+
+`llamaranch delete <name>` asks for confirmation before removing the YAML file.
+It refuses to delete a running profile unless `--force` is passed.
 
 ## Runtime Model
 

@@ -16,7 +16,7 @@ class GlobalConfig:
     raw: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
-    def from_mapping(cls, data: Mapping[str, Any]) -> "GlobalConfig":
+    def from_mapping(cls, data: Mapping[str, Any], label: str = "config.yaml") -> "GlobalConfig":
         value = first_present(
             data,
             "llama_server",
@@ -24,7 +24,7 @@ class GlobalConfig:
             "llama_server_executable",
             default="~/.local/bin/llama-server",
         )
-        return cls(llama_server=coerce_path(value, "config.yaml:llama_server"), raw=dict(data))
+        return cls(llama_server=coerce_path(value, f"{label}:llama_server"), raw=dict(data))
 
 
 @dataclass(frozen=True)
