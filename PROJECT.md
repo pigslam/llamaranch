@@ -1,93 +1,136 @@
-# Project Architecture
+# PROJECT.md
+
+# LlamaRanch Project
 
 ## Purpose
 
-Provide a lightweight operational control layer for llama.cpp deployments.
+LlamaRanch exists to solve operational problems around running local llama.cpp servers.
 
-LlamaRanch exists to answer:
+The project originated from practical experience running multiple local models on dedicated AI hardware.
 
-* What models are available?
-* What deployments are configured?
-* What is currently running?
-* How do I start, stop, or modify deployments?
+Current workflows require repeatedly constructing and launching large llama.cpp commands by hand.
 
-## Design Principles
+This creates several recurring problems:
 
-1. Linux-first
-2. Single-user operation
-3. Human-readable configuration
-4. Git-friendly configuration
-5. No database unless proven necessary
-6. No Docker requirement
-7. No Kubernetes
-8. No cloud dependency
-9. llama.cpp remains the inference engine
-10. OpenWebUI remains the chat interface
+* commands are difficult to remember
+* model-specific tuning is easily lost
+* services are not persistent
+* reboot recovery is manual
+* logs are fragmented
+* configuration knowledge becomes tribal knowledge
 
-## Configuration Objects
+LlamaRanch aims to convert those manual workflows into repeatable infrastructure.
 
-### Host
+## Guiding Principle
 
-Represents a machine capable of running deployments.
+LlamaRanch manages services.
 
-### Slot
+Llama.cpp performs inference.
 
-Represents a named runtime position on a host.
+Clients consume APIs.
 
-Slots are stable identifiers.
+Each layer should remain independent.
 
-Examples:
+## Project Scope
 
-* fast-chat
-* coder
-* long-context
-* experimental
+The project is intentionally divided into phases.
+
+### Phase 1
+
+Local service management.
+
+Target:
+
+* one host
+* one user
+* one machine
+* one or more local GPUs
+
+Responsibilities:
+
+* configuration management
+* command generation
+* service deployment
+* service lifecycle management
+* logging
+* validation
+
+### Future Phases
+
+Future work may include:
+
+* multiple hosts
+* remote management
+* routing
+* model abstraction
+* gateway services
+* OpenWebUI integration
+* automatic discovery
+* orchestration
+
+These capabilities are explicitly out of scope for Phase 1.
+
+## Architectural Philosophy
+
+Build the smallest useful layer first.
+
+Avoid solving distributed systems problems until local service management is stable.
+
+A successful local foundation should naturally support future expansion.
+
+## Core Objects
 
 ### Model
 
-Represents a GGUF file.
+Defines:
 
-### Preset
+* GGUF location
+* model defaults
+* model tuning
 
-Represents a reusable collection of llama.cpp parameters.
+### Hardware Target
 
-Examples:
+Defines:
 
-* R9700 Fast Chat
-* Long Context
-* Coding
+* backend
+* GPU configuration
+* host-specific execution settings
 
-### Deployment
+### Server
 
-Represents desired state.
+Defines:
 
-A deployment combines:
-
-* Host
-* Slot
-* Model
-* Preset
+* model
+* hardware target
+* port
+* launch behavior
 
 ### Instance
 
-Represents actual runtime state.
+Represents a running service.
 
-An instance may be:
+## Runtime Strategy
 
-* running
-* stopped
-* failed
+Systemd user services are the authoritative deployment mechanism.
 
-## Configuration Storage
+LlamaRanch generates and manages systemd units.
 
-Configuration should remain:
+LlamaRanch does not replace systemd.
 
-* plain text
-* human editable
-* version controlled
+It simplifies interaction with it.
 
-Preferred format:
+## Success Criteria
 
-YAML
+The project succeeds when a user can reliably manage llama.cpp deployments using:
 
-No database should be introduced without a demonstrated need.
+```bash
+llamaranch validate
+llamaranch render fast-chat
+llamaranch start fast-chat
+llamaranch status
+llamaranch logs fast-chat
+llamaranch restart fast-chat
+llamaranch stop fast-chat
+```
+
+without manually constructing or maintaining llama.cpp launch commands.
